@@ -60,7 +60,7 @@ def test_after_camera_calibration_images_should_be_undistorted(image,
                                                                cam_mtx,
                                                                cam_dist,
                                                                figsize=(10,5)): 
-    undist = cv2.undistort(image, cam_mtx, cam_dist, None, cam_mtx)
+    undist_image = cv2.undistort(image, cam_mtx, cam_dist, None, cam_mtx)
     plt.figure(figsize=figsize)
     plt.subplot(1, 2, 1)
     plt.imshow(image)
@@ -69,8 +69,8 @@ def test_after_camera_calibration_images_should_be_undistorted(image,
     plt.yticks([], [])
 
     plt.subplot(1, 2, 2)
-    plt.imshow(undist)
-    plt.xlabel('Undistorted image')
+    plt.imshow(undist_image)
+    plt.xlabel('undist_imageorted image')
     plt.xticks([], [])
     plt.yticks([], [])
     plt.show()
