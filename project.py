@@ -46,31 +46,46 @@ def calibrate_camera(cal_images, nx, ny):
     
     return mtx, dist
 
-def undistort_image(imgage, cam_cal_mtx, cam_cal_dist):
-    """Undistort given image according to camera calibration parameters
-    """
-    return cv2.undistort(image, cam_cal_mtx, cam_cal_dist, None, cam_cal_mtx)
-
 def calibrate_camera_from_data():
     cal_images = glob.glob('camera_cal/calibration*.jpg')
     nx, ny = 9, 6
-    return calibrate_camera(cal_images, nx, ny)
+    cam_mtx, cam_dst = calibrate_camera(cal_images, nx, ny)
+    return cam_mtx, cam_dst, nx, ny
 
-def test_after_camera_calibration_images_should_be_undistorted(image,
-                                                               cam_mtx,
-                                                               cam_dist,
-                                                               figsize=(10,5)): 
-    undist_image = cv2.undistort(image, cam_mtx, cam_dist, None, cam_mtx)
-    plt.figure(figsize=figsize)
-    plt.subplot(1, 2, 1)
-    plt.imshow(image)
-    plt.xlabel('Original image')
-    plt.xticks([], [])
-    plt.yticks([], [])
+def undistort(image, cam_mtx, cam_dist):
+    """Undistort given image according to camera calibration parameters
+    """
+    return cv2.undistort(image, cam_mtx, cam_dist, None, cam_mtx)
 
-    plt.subplot(1, 2, 2)
-    plt.imshow(undist_image)
-    plt.xlabel('undist_imageorted image')
-    plt.xticks([], [])
-    plt.yticks([], [])
-    plt.show()
+def transform_to_birds_eye_perspective(image, nx, ny, cam_mtx, cam_dst, offset = 100):
+    """Calculate perspective transform for an image given chessboard corners and camera parameters 
+    """
+    # 1) Undistort using mtx and dist
+    u_image = undistort(image, cam_mtx, cam_dst)
+    # 2) Convert to grayscale
+    g_image = cv2.cvtColor(u_image, cv2.COLOR_BGR2GRAY)
+    # 3) Find the chessboard corners
+    ret, corners = cv2.findChessboardCorners(g_image, (nx, ny), None)
+    p_image, p_mat = None, None
+    if ret == True:
+            # 4) If corners found: 
+            # a) draw corners
+            #cv2.drawChessboardCorners(undist, (nx, ny), corners, ret)
+            # b) define 4 source points src = np.float32([[,],[,],[,],[,]])
+                 #Note: you could pick any four of the detected corners 
+                 # as long as those four corners define a rectangle
+                 #One especially smart way to do this would be to use four well-chosen
+                 # corners that were automatically detected during the undistortion steps
+                 #We recommend using the automatic detection of corners in your code
+            src = np.float32([corners[0], corners[nx-1], corners[-1], corners[-nx]])
+            # c) define 4 destination points dst = np.float32([[,],[,],[,],[,]])
+            w, h = g_image.shape[1], g_image.shape[0]
+            dst = np.float32([[offset, offset], [w-offset, offset], 
+                             [w-offset, h-offset], 
+                             [offset, h-offset]])
+            # d) use cv2.getPerspectiveTransform() to get p_mat, the transform matrix
+            p_mat = cv2.getPerspectiveTransform(src, dst)
+            # e) use cv2.warpPerspective() to warp your image to a top-down view
+            # Warp the image using OpenCV warpPerspective()
+            p_image = cv2.warpPerspective(u_image, p_mat, (w, h))
+    return p_image, p_mat
