@@ -52,31 +52,40 @@ def calibrate_camera_from_data():
     cam_mtx, cam_dst = calibrate_camera(cal_images, nx, ny)
     return cam_mtx, cam_dst, nx, ny
 
-def undistort(image, cam_mtx, cam_dist):
+class CameraCalibration:
+    cam_mtx = None
+    cam_dst = None
+    nx = None
+    ny = None
+    def __init__(self, *args, **kwargs):
+        super(CameraCalibration, self).__init__(*args, **kwargs)
+        self.cam_mtx, self.cam_dst, self.nx, self.ny = calibrate_camera_from_data()
+
+def undistort(image, cam_cal):
     """Undistort given image according to camera calibration parameters
     """
-    return cv2.undistort(image, cam_mtx, cam_dist, None, cam_mtx)
+    return cv2.undistort(image, cam_cal.cam_mtx, cam_cal.cam_dst, None, cam_cal.cam_mtx)
 
-def transform_to_birds_eye_perspective(image, nx, ny, cam_mtx, cam_dst, offset = 100):
+def transform_to_birds_eye_perspective(image, cam_cal, offset = 100):
     """Calculate perspective transform for an image given chessboard corners and camera parameters 
     """
-    # 1) Undistort using mtx and dist
-    u_image = undistort(image, cam_mtx, cam_dst)
+    # 1) Undistort using camera calibration data
+    u_image = undistort(image, cam_cal)
     # 2) Convert to grayscale
     g_image = cv2.cvtColor(u_image, cv2.COLOR_BGR2GRAY)
     # 3) Find the chessboard corners
-    ret, corners = cv2.findChessboardCorners(g_image, (nx, ny), None)
+    ret, corners = cv2.findChessboardCorners(g_image, (cam_cal.nx, cam_cal.ny), None)
     p_image, p_mat = None, None
     if ret == True:
             # 4) If corners found: 
             # a) draw corners
             #cv2.drawChessboardCorners(undist, (nx, ny), corners, ret)
             # b) define 4 source points src = np.float32([[,],[,],[,],[,]])
-                 #Note: you could pick any four of the detected corners 
-                 # as long as those four corners define a rectangle
-                 #One especially smart way to do this would be to use four well-chosen
-                 # corners that were automatically detected during the undistortion steps
-                 #We recommend using the automatic detection of corners in your code
+                #Note: you could pick any four of the detected corners 
+                # as long as those four corners define a rectangle
+                #One especially smart way to do this would be to use four well-chosen
+                # corners that were automatically detected during the undistortion steps
+                #We recommend using the automatic detection of corners in your code
             src = np.float32([corners[0], corners[nx-1], corners[-1], corners[-nx]])
             # c) define 4 destination points dst = np.float32([[,],[,],[,],[,]])
             w, h = g_image.shape[1], g_image.shape[0]
