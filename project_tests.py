@@ -34,12 +34,12 @@ class CameraCalibration(unittest.TestCase):
         
     def images_should_be_transformed_to_birds_eye_perspective(self, image_file, figsize=(10,5)):
         image = mpimage.imread(image_file)        
-        p_image, p_mat = project.transform_to_birds_eye_perspective(image, 
+        p_image, _ = project.transform_to_birds_eye_perspective(image, 
                                                                     self.nx, 
                                                                     self.ny,
                                                                     self.cam_mtx,
                                                                     self.cam_dst)
-        return image, p_image, p_mat
+        return image, p_image
 
         
 
