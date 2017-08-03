@@ -13,7 +13,8 @@ class TestImageTransform(unittest.TestCase):
                           image_before, 
                           image_after, 
                           txt_before='Original image',
-                          txt_after='Transformed image',                      
+                          txt_after='Transformed image',
+                          cmap=None,
                           figsize=(10,5)):
         project.plt.figure(figsize=figsize)
         project.plt.subplot(1, 2, 1)
@@ -23,7 +24,7 @@ class TestImageTransform(unittest.TestCase):
         project.plt.yticks([], [])
 
         project.plt.subplot(1, 2, 2)
-        project.plt.imshow(image_after)
+        project.plt.imshow(image_after, cmap=cmap)
         project.plt.xlabel(txt_after)
         project.plt.xticks([], [])
         project.plt.yticks([], [])
@@ -40,6 +41,21 @@ class TestImageTransform(unittest.TestCase):
         p_image = self.birds_eye_view.transform(self.cam_cal.undistort(image))
         self.draw_before_after(image, p_image, txt_after='Birds eye perspective')
         #return image, p_image    
+
+    def images_after_color_transform_should_acentuate_lanes(self, image_file):
+        image = project.mpimage.imread(image_file)
+        t_image = project.threshold_transform(image)
+        self.draw_before_after(image, t_image, txt_after='Binarized image', cmap='gray')
+        return image, t_image
+   
+    def images_after_full_transform_show_lanes(self, image_file):
+        image = project.mpimage.imread(image_file)
+        t_image = project.threshold_transform(\
+            self.birds_eye_view.transform(\
+            self.cam_cal.undistort(image)))
+        self.draw_before_after(image, t_image, txt_after='Tranformed image', cmap='gray')
+        return image, t_image
+   
 
 #if __name__ == '__main__':
 #    test = TestImageTransform()
