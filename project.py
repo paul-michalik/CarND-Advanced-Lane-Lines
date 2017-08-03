@@ -25,13 +25,16 @@ class CameraCalibration:
     cam_dst = None
     nx = None
     ny = None
-    def __init__(self, *args, **kwargs):
-        self.cam_mtx, self.cam_dst, self.nx, self.ny = self.__calibrate_camera_from_data()
 
+    def __init__(self):
+        self.cam_mtx, self.cam_dst, self.nx, self.ny = self.__calibrate_camera_from_data()
+        
     def __calibrate_camera_from_data(self):
-        cal_images = glob.glob('camera_cal/calibration*.jpg')
         nx, ny = 9, 6
-        cam_mtx, cam_dst = self.__calibrate_camera(cal_images, nx, ny)
+        cam_mtx, cam_dst = self.__calibrate_camera(\
+            cal_images=glob.glob('camera_cal/calibration*.jpg'),
+            nx=nx, 
+            ny=ny)
         return cam_mtx, cam_dst, nx, ny
 
     def __calibrate_camera(self, cal_images, nx, ny):
@@ -69,11 +72,15 @@ class BirdsEyeView:
     src = None
     dst = None
     p_mat = None
-    def __init__(self):
-        ref_image = mpimage.imread('test_images/straight_lines1.jpg')
-        self.p_mat, self.src, self.dst = self.__birds_eye_perspective(ref_image)
 
-    def __birds_eye_perspective(self, image):
+    def __init__(self, cam_cal):
+        self.p_mat, self.src, self.dst = self.__birds_eye_perspective_from_data(cam_cal)
+
+    def __birds_eye_perspective_from_data(self, cam_cal):
+        ref_image = mpimage.imread('test_images/straight_lines1.jpg')
+        return self.__calculate_birds_eye_perspective(cam_cal.undistort(ref_image))
+
+    def __calculate_birds_eye_perspective(self, image):
         """Calculate perspective transform for a road image from the test set 
         """
         # define source and destination points for transform
@@ -97,3 +104,8 @@ class BirdsEyeView:
         # Warp the image using OpenCV warpPerspective()
         w, h = image.shape[1], image.shape[0]
         return cv2.warpPerspective(image, self.p_mat, (w, h))
+
+class ColorSpaceTransform:
+    def __init__(self):
+        return
+
