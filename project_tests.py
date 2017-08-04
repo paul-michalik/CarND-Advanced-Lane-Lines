@@ -1,63 +1,63 @@
-import unittest
-import project
+from project import *
 
-class TestImageTransform(unittest.TestCase):
-    cam_cal = None
-    birds_eye_view = None
-    def __init__(self, *args, **kwargs):
-        super(TestImageTransform, self).__init__(*args, **kwargs)
-        self.cam_cal = project.CameraCalibration()
-        self.birds_eye_view = project.BirdsEyeView(self.cam_cal)
 
-    def draw_before_after(self,
-                          image_before, 
-                          image_after, 
-                          txt_before='Original image',
-                          txt_after='Transformed image',
-                          cmap=None,
-                          figsize=(10,5)):
-        project.plt.figure(figsize=figsize)
-        project.plt.subplot(1, 2, 1)
-        project.plt.imshow(image_before)
-        project.plt.xlabel(txt_before)
-        project.plt.xticks([], [])
-        project.plt.yticks([], [])
+def draw_before_after(image_before, 
+                      image_after, 
+                      txt_before='Original image',
+                      txt_after='Transformed image',
+                      cmap=None,
+                      figsize=(10,5)):
+    plt.figure(figsize=figsize)
+    plt.subplot(1, 2, 1)
+    plt.imshow(image_before)
+    plt.xlabel(txt_before)
+    plt.xticks([], [])
+    plt.yticks([], [])
 
-        project.plt.subplot(1, 2, 2)
-        project.plt.imshow(image_after, cmap=cmap)
-        project.plt.xlabel(txt_after)
-        project.plt.xticks([], [])
-        project.plt.yticks([], [])
-        project.plt.show()
+    plt.subplot(1, 2, 2)
+    plt.imshow(image_after, cmap=cmap)
+    plt.xlabel(txt_after)
+    plt.xticks([], [])
+    plt.yticks([], [])
+    plt.show()
 
-    def images_should_be_undistorted(self, image_file):
-        image = project.mpimage.imread(image_file)        
-        undist_image = self.cam_cal.undistort(image)
-        self.draw_before_after(image, undist_image, txt_after='Undistorted image')
-        #return image, undist_image
+def images_should_be_undistorted(camera_calibration, image_file):
+    image = mpimage.imread(image_file)        
+    undist_image = camera_calibration.undistort(image)
+    draw_before_after(image, undist_image, txt_after='Undistorted image')
+    return image, undist_image
         
-    def images_should_be_transformed_to_birds_eye_perspective(self, image_file):
-        image = project.mpimage.imread(image_file)
-        p_image = self.birds_eye_view.transform(self.cam_cal.undistort(image))
-        self.draw_before_after(image, p_image, txt_after='Birds eye perspective')
-        #return image, p_image    
+def images_should_be_transformed_to_birds_eye_perspective(camera_calibration, birds_eye_view, image_file):
+    image = mpimage.imread(image_file)
+    p_image = birds_eye_view.transform(camera_calibration.undistort(image))
+    draw_before_after(image, p_image, txt_after='Birds eye perspective')
+    return image, p_image    
 
-    def images_after_color_transform_should_acentuate_lanes(self, image_file):
-        image = project.mpimage.imread(image_file)
-        t_image = project.threshold_transform(image)
-        self.draw_before_after(image, t_image, txt_after='Binarized image', cmap='gray')
-        return image, t_image
+def images_after_color_transform_should_acentuate_lanes(image_file):
+    image = mpimage.imread(image_file)
+    t_image = threshold_transform(image)
+    draw_before_after(image, t_image, txt_after='Binarized image', cmap='gray')
+    return image, t_image
    
-    def images_after_full_transform_show_lanes(self, image_file):
-        image = project.mpimage.imread(image_file)
-        t_image = project.threshold_transform(\
-            self.birds_eye_view.transform(\
-            self.cam_cal.undistort(image)))
-        self.draw_before_after(image, t_image, txt_after='Tranformed image', cmap='gray')
-        return image, t_image
-   
+def images_after_transform_show_lanes(camera_calibration, birds_eye_view, image_file):
+    image = mpimage.imread(image_file)
+    t_image = threshold_transform(\
+        birds_eye_view.transform(\
+        camera_calibration.undistort(image)))
+    draw_before_after(image, t_image, txt_after='Tranformed image', cmap='gray')
+    return image, t_image
+
+def images_after_clipping_and_transform_show_lanes(camera_calibration, birds_eye_view, image_file):
+    image = mpimage.imread(image_file)
+
+    roi_vertices = birds_eye_view.src_vertices_as_region_for_polyFill()
+
+    t_image = threshold_transform(\
+        birds_eye_view.transform(\
+        camera_calibration.undistort(\
+        region_of_interest(image, roi_vertices))))
+    draw_before_after(image, t_image, txt_after='Tranformed image', cmap='gray')
+    return image, t_image   
 
 #if __name__ == '__main__':
-#    test = TestImageTransform()
-#    test.images_should_be_transformed_to_birds_eye_perspective('test_images/straight_lines1.jpg')
 #    unittest.main()

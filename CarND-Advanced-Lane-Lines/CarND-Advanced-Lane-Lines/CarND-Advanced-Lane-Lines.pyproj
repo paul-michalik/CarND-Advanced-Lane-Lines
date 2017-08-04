@@ -5,15 +5,15 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>a203f27b-334c-48dd-92d9-8bab4783e011</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>
-    </StartupFile>
+    <StartupFile>..\..\project.py</StartupFile>
     <SearchPath>..\..\..\</SearchPath>
-    <WorkingDirectory>.</WorkingDirectory>
+    <WorkingDirectory>..\..\</WorkingDirectory>
     <OutputPath>.</OutputPath>
     <Name>CarND-Advanced-Lane-Lines</Name>
     <RootNamespace>CarND-Advanced-Lane-Lines</RootNamespace>
     <InterpreterId>{8e64f187-5469-4e01-9b69-32689ec8537b}</InterpreterId>
     <InterpreterVersion>3.5</InterpreterVersion>
+    <IsWindowsApplication>False</IsWindowsApplication>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
