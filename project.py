@@ -73,7 +73,7 @@ class BirdsEyeView:
     ref_image = None
 
     def __init__(self, src, dst, p_mat, ref_image):
-        self.p_mat, self.src, self.dst, ref_image = src, dst, p_mat, ref_image
+        self.src, self.dst, self.p_mat, self.ref_image = src, dst, p_mat, ref_image
 
     def src_vertices_as_region_for_polyFill(self):
         return np.int32([src])
