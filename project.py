@@ -76,7 +76,33 @@ class BirdsEyeView:
         self.src, self.dst, self.p_mat, self.ref_image = src, dst, p_mat, ref_image
 
     def src_vertices_as_region_for_polyFill(self):
-        return np.int32([src])
+        roi_vertices = np.array([[\
+            tuple(self.src[2]), 
+            tuple(self.src[3]), 
+            tuple(self.src[1]), 
+            tuple(self.src[0])]], dtype=int32)
+        delta_x_low = 30
+        delta_x_high = 90
+        roi_vertices[0][0][0] = roi_vertices[0][0][0] - delta_x_low
+        roi_vertices[0][1][0] = roi_vertices[0][1][0] + delta_x_low
+        roi_vertices[0][2][0] = roi_vertices[0][2][0] + delta_x_high
+        roi_vertices[0][3][0] = roi_vertices[0][3][0] - delta_x_high
+        return roi_vertices
+
+    def dst_vertices_as_region_for_polyFill(self):
+        # I hat numpy and the it's stuid arrays...
+        roi_vertices = np.array([[\
+            tuple(self.dst[2]), 
+            tuple(self.dst[3]), 
+            tuple(self.dst[1]), 
+            tuple(self.dst[0])]], dtype = int32)
+        delta_x_low = 30
+        delta_x_high = 90
+        roi_vertices[0][0][0] = roi_vertices[0][0][0] - delta_x_low
+        roi_vertices[0][1][0] = roi_vertices[0][1][0] + delta_x_low
+        roi_vertices[0][2][0] = roi_vertices[0][2][0] + delta_x_high
+        roi_vertices[0][3][0] = roi_vertices[0][3][0] - delta_x_high
+        return roi_vertices
 
     def transform(self, image):
         """transform an image given the perspective matrix 
@@ -170,55 +196,71 @@ def draw_before_after(image_before,
     plt.subplot(1, 2, 1)
     plt.imshow(image_before)
     plt.xlabel(txt_before)
-    plt.xticks([], [])
-    plt.yticks([], [])
+    #plt.xticks([], [])
+    #plt.yticks([], [])
 
     plt.subplot(1, 2, 2)
     plt.imshow(image_after, cmap=cmap)
     plt.xlabel(txt_after)
-    plt.xticks([], [])
-    plt.yticks([], [])
+    #plt.xticks([], [])
+    #plt.yticks([], [])
     plt.show()
 
 def images_should_be_undistorted(camera_calibration, image_file):
     image = mpimage.imread(image_file)        
     undist_image = camera_calibration.undistort(image)
     draw_before_after(image, undist_image, txt_after='Undistorted image')
-    return image, undist_image
+    #return image, undist_image
         
 def images_should_be_transformed_to_birds_eye_perspective(camera_calibration, birds_eye_view, image_file):
     image = mpimage.imread(image_file)
     p_image = birds_eye_view.transform(camera_calibration.undistort(image))
     draw_before_after(image, p_image, txt_after='Birds eye perspective')
-    return image, p_image    
+    #return image, p_image    
 
 def images_after_color_transform_should_acentuate_lanes(image_file):
     image = mpimage.imread(image_file)
     t_image = threshold_transform(image)
     draw_before_after(image, t_image, txt_after='Binarized image', cmap='gray')
-    return image, t_image
+    #return image, t_image
    
-def images_after_transform_show_lanes(camera_calibration, birds_eye_view, image_file):
+def images_after_full_transform_show_lanes(camera_calibration, birds_eye_view, image_file):
     image = mpimage.imread(image_file)
     t_image = threshold_transform(\
         birds_eye_view.transform(\
         camera_calibration.undistort(image)))
-    draw_before_after(image, t_image, txt_after='Tranformed image', cmap='gray')
-    return image, t_image
 
-def images_after_clipping_and_transform_show_lanes(camera_calibration, birds_eye_view, image_file):
+    v = birds_eye_view.dst_vertices_as_region_for_polyFill()
+    color = (0,255,255)
+    cv2.line(t_image, tuple(v[0][0]), tuple(v[0][1]), color=color, thickness = 5)
+    cv2.line(t_image, tuple(v[0][1]), tuple(v[0][2]), color=color, thickness = 5)
+    cv2.line(t_image, tuple(v[0][2]), tuple(v[0][3]), color=color, thickness = 5)
+    cv2.line(t_image, tuple(v[0][3]), tuple(v[0][0]), color=color, thickness = 5)
+    draw_before_after(image, t_image, txt_after='Tranformed image, not clipped', cmap='gray')
+    #return image, t_image
+
+def images_after_full_transform_and_clipping_show_lanes(camera_calibration, birds_eye_view, image_file):
     image = mpimage.imread(image_file)
 
-    roi_vertices = birds_eye_view.src_vertices_as_region_for_polyFill()
+    roi_vertices = birds_eye_view.dst_vertices_as_region_for_polyFill()
 
-    t_image = threshold_transform(\
+    t_image = region_of_interest(\
+        threshold_transform(\
         birds_eye_view.transform(\
-        camera_calibration.undistort(\
-        region_of_interest(image, roi_vertices))))
-    draw_before_after(image, t_image, txt_after='Tranformed image', cmap='gray')
-    return image, t_image
+        camera_calibration.undistort(image))), roi_vertices)
+    draw_before_after(image, t_image, txt_after='Tranformed image, clipped', cmap='gray')
+    #return image, t_image
 
 if __name__ == '__main__':
     cc = calibrate_camera_init()
     bb = birds_eye_view_init(cc)
+    images_should_be_undistorted(cc, 'camera_cal/calibration1.jpg')
+    images_should_be_undistorted(cc, 'test_images/test1.jpg')
     images_should_be_transformed_to_birds_eye_perspective(cc, bb, 'test_images/test1.jpg')
+    images_should_be_transformed_to_birds_eye_perspective(cc, bb, 'test_images/test2.jpg')
+    images_after_color_transform_should_acentuate_lanes('test_images/test1.jpg')
+    images_after_color_transform_should_acentuate_lanes('test_images/test2.jpg')
+
+    for fname in glob.glob('test_images/test*.jpg'):
+        images_after_full_transform_show_lanes(cc, bb, fname)
+        images_after_full_transform_and_clipping_show_lanes(cc, bb, fname)
