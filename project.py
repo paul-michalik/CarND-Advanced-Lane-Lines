@@ -182,6 +182,13 @@ def region_of_interest(img, vertices):
     masked_image = cv2.bitwise_and(img, mask)
     return masked_image
 
+def transform_and_clip(camera_calibration, birds_eye_view, image):
+    roi_vertices = birds_eye_view.dst_vertices_as_region_for_polyFill()
+    return region_of_interest(\
+        threshold_transform(\
+        birds_eye_view.transform(\
+        camera_calibration.undistort(image))), roi_vertices)
+
 """
 Tests
 """
@@ -261,6 +268,10 @@ if __name__ == '__main__':
     images_after_color_transform_should_acentuate_lanes('test_images/test1.jpg')
     images_after_color_transform_should_acentuate_lanes('test_images/test2.jpg')
 
+    #for fname in glob.glob('test_images/test*.jpg'):
+    #    images_after_full_transform_show_lanes(cc, bb, fname)
+    #    images_after_full_transform_and_clipping_show_lanes(cc, bb, fname)
+
     for fname in glob.glob('test_images/test*.jpg'):
-        images_after_full_transform_show_lanes(cc, bb, fname)
-        images_after_full_transform_and_clipping_show_lanes(cc, bb, fname)
+        image = mpimage.imread(fname)
+        draw_before_after(image, transform_and_clip(cc, bb, image), cmap='gray')
