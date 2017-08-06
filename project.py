@@ -90,7 +90,7 @@ class BirdsEyeView:
         return roi_vertices
 
     def dst_vertices_as_region_for_polyFill(self):
-        # I hat numpy and the it's stuid arrays...
+        # I hate numpy and the the stupid arrays...
         roi_vertices = np.array([[\
             tuple(self.dst[2]), 
             tuple(self.dst[3]), 
@@ -182,12 +182,27 @@ def region_of_interest(img, vertices):
     masked_image = cv2.bitwise_and(img, mask)
     return masked_image
 
-def transform_and_clip(camera_calibration, birds_eye_view, image):
-    roi_vertices = birds_eye_view.dst_vertices_as_region_for_polyFill()
-    return region_of_interest(\
-        threshold_transform(\
-        birds_eye_view.transform(\
-        camera_calibration.undistort(image))), roi_vertices)
+class ImageProcessing:
+    camera_calibration = None
+    birds_eye_view = None
+
+    def __init__(self, camera_calibration = None, birds_eye_view = None):
+        if camera_calibration == None:
+            self.camera_calibration = calibrate_camera_init()
+        else:
+            self.camera_calibration = camera_calibration
+
+        if birds_eye_view == None:
+            self.birds_eye_view = birds_eye_view_init(self.camera_calibration)
+        else:
+            self.birds_eye_view = birds_eye_view
+
+    def apply(self, image):
+        roi_vertices = self.birds_eye_view.dst_vertices_as_region_for_polyFill()
+        return region_of_interest(\
+            threshold_transform(\
+            self.birds_eye_view.transform(\
+            self.camera_calibration.undistort(image))), roi_vertices)
 
 """
 Tests
@@ -272,6 +287,7 @@ if __name__ == '__main__':
     #    images_after_full_transform_show_lanes(cc, bb, fname)
     #    images_after_full_transform_and_clipping_show_lanes(cc, bb, fname)
 
+    img_proc = ImageProcessing(cc, bb)
     for fname in glob.glob('test_images/test*.jpg'):
         image = mpimage.imread(fname)
-        draw_before_after(image, transform_and_clip(cc, bb, image), cmap='gray')
+        draw_before_after(image, img_proc.apply(image), cmap='gray')
