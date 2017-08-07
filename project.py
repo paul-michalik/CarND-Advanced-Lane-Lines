@@ -70,10 +70,12 @@ class BirdsEyeView:
     src = None
     dst = None
     p_mat = None
+    p_inv_mat = None
     ref_image = None
 
-    def __init__(self, src, dst, p_mat, ref_image):
-        self.src, self.dst, self.p_mat, self.ref_image = src, dst, p_mat, ref_image
+    def __init__(self, src, dst, p_mat, p_inv_mat, ref_image):
+        self.src, self.dst, self.p_mat, self.p_inv_mat, self.ref_image = src, dst, p_mat, p_inv_mat, ref_image
+
 
     def src_vertices_as_region_for_polyFill(self):
         roi_vertices = np.array([[\
@@ -127,7 +129,8 @@ def birds_eye_view(ref_image):
                       (w-450,h)])
     # use cv2.getPerspectiveTransform() to get p_mat, the transform matrix
     p_mat = cv2.getPerspectiveTransform(src, dst)
-    return BirdsEyeView(src=src, dst=dst, p_mat=p_mat, ref_image=ref_image) 
+    p_inv_mat = cv2.getPerspectiveTransform(dst, src)
+    return BirdsEyeView(src=src, dst=dst, p_mat=p_mat, p_inv_mat=p_inv_mat, ref_image=ref_image) 
 
 def birds_eye_view_init(cam_cal, ref_image_fname = 'test_images/straight_lines1.jpg'):
     ref_image = mpimage.imread(ref_image_fname)
@@ -214,8 +217,6 @@ class LanePolyfit:
     left_lane_inds = None
     right_lane_inds = None
     out_img = None
-    nonzerox = None
-    nonzeroy = None
 
     def __init__(self, 
                  left_fit, right_fit, 
@@ -242,6 +243,49 @@ class LanePolyfit:
         right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
         return ploty, left_fitx, right_fitx
 
+    def rad_of_curvature_in_world_space(self, image):
+        warped_image = image
+
+        # Define conversions in x and y from pixels space to meters
+        ym_per_pix = 30/720 # meters per pixel in y dimension
+        xm_per_pix = 3.7/700 # meters per pixel in x dimension
+
+        ploty, left_fitx, right_fitx = self.gen_xy_for_plotting(warped_image)
+
+        # Fit new polynomials to x,y in world space
+        left_fit_cr = np.polyfit(ploty*ym_per_pix, leftx*xm_per_pix, 2)
+        right_fit_cr = np.polyfit(ploty*ym_per_pix, rightx*xm_per_pix, 2)
+        # Calculate the new radii of curvature
+        left_curverad = ((1 + (2*left_fit_cr[0]*y_eval*ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
+        right_curverad = ((1 + (2*right_fit_cr[0]*y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
+
+        # Now our radius of curvature is in meters
+        return left_curverad, right_curverad
+
+    def reproject(self, warped_image, org_image, p_mat_inv):
+        warped = warped_image
+        image = org_image
+        Minv = p_mat_inv
+        ploty, left_fitx, right_fitx = self.gen_xy_for_plotting(warped_image)
+        
+        # Create an image to draw the lines on
+        warp_zero = np.zeros_like(warped).astype(np.uint8)
+        color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+
+        # Recast the x and y points into usable format for cv2.fillPoly()
+        pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+        pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+        pts = np.hstack((pts_left, pts_right))
+
+        # Draw the lane onto the warped blank image
+        cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
+
+        # Warp the blank back to original image space using inverse perspective matrix (Minv)
+        newwarp = cv2.warpPerspective(color_warp, Minv, (image.shape[1], image.shape[0])) 
+        # Combine the result with the original image
+        result = cv2.addWeighted(undist, 1, newwarp, 0.3, 0)
+        return result
+
     def draw_init(self, image):
         binary_warped = image
         left_fit, right_fit = self.left_fit, self.right_fit
@@ -255,10 +299,11 @@ class LanePolyfit:
         out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
         out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
         plt.imshow(out_img)
-        plt.plot(left_fitx, ploty, color='yellow')
-        plt.plot(right_fitx, ploty, color='yellow')
+        plt.plot(left_fitx, ploty, color='white')
+        plt.plot(right_fitx, ploty, color='white')
         plt.xlim(0, 1280)
         plt.ylim(720, 0)
+        plt.show()
     
     def draw_next(self, image):
         binary_warped = image
@@ -351,11 +396,11 @@ def lane_polyfit_sliding_window_init(image, per_cent_of_view=0.5, nwindows=9, ma
         cv2.rectangle(out_img,
                       (win_xleft_low,win_y_low),
                       (win_xleft_high,win_y_high),
-                      (0,255,0), 2) 
+                      (0,255,0), thickness=3) 
         cv2.rectangle(out_img,
                       (win_xright_low,win_y_low),
                       (win_xright_high,win_y_high),
-                      (0,255,0), 2) 
+                      (0,255,0), thickness=3) 
 
         # Identify the nonzero pixels in x and y within the window
         good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & (nonzerox >= win_xleft_low) & (nonzerox < win_xleft_high)).nonzero()[0]
@@ -504,6 +549,18 @@ def test_image_transform(camera_calibration, bird_eye_view):
         image = mpimage.imread(fname)
         draw_before_after(image, img_proc.apply(image), cmap='gray')
 
+def test_lane_polyfit_on_image_sequence(camera_calibration, bird_eye_view):
+    img_proc = ImageProcessing(cc, bb)
+    for fname in glob.glob('test_images/test*.jpg'):
+        image = mpimage.imread(fname)
+        draw_before_after(image, img_proc.apply(image), cmap='gray')
+        lane_pfit = lane_polyfit_sliding_window_init(t_image, 
+                                                     per_cent_of_view=0.75, 
+                                                     nwindows=4, 
+                                                     margin=20, 
+                                                     minpix=20)
+        lane_pfit.draw_init(t_image)
+
 if __name__ == '__main__':
     cc = calibrate_camera_init()
     bb = birds_eye_view_init(cc)
@@ -511,9 +568,11 @@ if __name__ == '__main__':
     #test_image_transform(cc, bb)
     
     img_proc = ImageProcessing(cc, bb)
-
     image = mpimage.imread('test_images/test1.jpg')
     t_image = img_proc.apply(image)
     draw_before_after(image, t_image, cmap='gray')
-    lane_pfit = lane_polyfit_sliding_window_init(t_image, per_cent_of_view=0.5, nwindows=4, margin=50, minpix=50)
+    lane_pfit = lane_polyfit_sliding_window_init(t_image, per_cent_of_view=0.75, nwindows=5, margin=20, minpix=20)
     lane_pfit.draw_init(t_image)
+
+    test_lane_polyfit_on_image_sequence(cc, bb)
+
