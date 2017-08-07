@@ -548,9 +548,10 @@ def test_image_transform(camera_calibration, bird_eye_view):
     for fname in glob.glob('test_images/test*.jpg'):
         image = mpimage.imread(fname)
         draw_before_after(image, img_proc.apply(image), cmap='gray')
+        # like line break in an interactive shell...
+        plt.show()
 
-def test_lane_polyfit_on_image_sequence(camera_calibration, bird_eye_view):
-    img_proc = ImageProcessing(cc, bb)
+def test_lane_polyfit_on_image_sequence(img_proc):
     for fname in glob.glob('test_images/test*.jpg'):
         image = mpimage.imread(fname)
         draw_before_after(image, img_proc.apply(image), cmap='gray')
@@ -568,11 +569,11 @@ if __name__ == '__main__':
     #test_image_transform(cc, bb)
     
     img_proc = ImageProcessing(cc, bb)
-    image = mpimage.imread('test_images/test1.jpg')
-    t_image = img_proc.apply(image)
-    draw_before_after(image, t_image, cmap='gray')
-    lane_pfit = lane_polyfit_sliding_window_init(t_image, per_cent_of_view=0.75, nwindows=5, margin=20, minpix=20)
-    lane_pfit.draw_init(t_image)
+    #image = mpimage.imread('test_images/test1.jpg')
+    #t_image = img_proc.apply(image)
+    #draw_before_after(image, t_image, cmap='gray')
+    #lane_pfit = lane_polyfit_sliding_window_init(t_image, per_cent_of_view=0.75, nwindows=5, margin=20, minpix=20)
+    #lane_pfit.draw_init(t_image)
 
-    test_lane_polyfit_on_image_sequence(cc, bb)
+    test_lane_polyfit_on_image_sequence(img_proc)
 
