@@ -70,11 +70,11 @@ class BirdsEyeView:
     src = None
     dst = None
     p_mat = None
-    p_inv_mat = None
+    p_mat_inv = None
     ref_image = None
 
-    def __init__(self, src, dst, p_mat, p_inv_mat, ref_image):
-        self.src, self.dst, self.p_mat, self.p_inv_mat, self.ref_image = src, dst, p_mat, p_inv_mat, ref_image
+    def __init__(self, src, dst, p_mat, p_mat_inv, ref_image):
+        self.src, self.dst, self.p_mat, self.p_mat_inv, self.ref_image = src, dst, p_mat, p_mat_inv, ref_image
 
 
     def src_vertices_as_region_for_polyFill(self):
@@ -129,8 +129,8 @@ def birds_eye_view(ref_image):
                       (w-450,h)])
     # use cv2.getPerspectiveTransform() to get p_mat, the transform matrix
     p_mat = cv2.getPerspectiveTransform(src, dst)
-    p_inv_mat = cv2.getPerspectiveTransform(dst, src)
-    return BirdsEyeView(src=src, dst=dst, p_mat=p_mat, p_inv_mat=p_inv_mat, ref_image=ref_image) 
+    p_mat_inv = cv2.getPerspectiveTransform(dst, src)
+    return BirdsEyeView(src=src, dst=dst, p_mat=p_mat, p_mat_inv=p_mat_inv, ref_image=ref_image) 
 
 def birds_eye_view_init(cam_cal, ref_image_fname = 'test_images/straight_lines1.jpg'):
     ref_image = mpimage.imread(ref_image_fname)
@@ -241,9 +241,9 @@ class LanePolyfit:
         ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0] )
         left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
         right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
-        return ploty, left_fitx, right_fitx
+        return ploty, left_fitx, right_fitx 
 
-    def rad_of_curvature_in_world_space(self, image):
+    def rad_of_curvature_and_dist_in_world_space(self, image):
         warped_image = image
 
         # Define conversions in x and y from pixels space to meters
@@ -253,14 +253,28 @@ class LanePolyfit:
         ploty, left_fitx, right_fitx = self.gen_xy_for_plotting(warped_image)
 
         # Fit new polynomials to x,y in world space
-        left_fit_cr = np.polyfit(ploty*ym_per_pix, leftx*xm_per_pix, 2)
-        right_fit_cr = np.polyfit(ploty*ym_per_pix, rightx*xm_per_pix, 2)
+        left_fit_cr = np.polyfit(ploty*ym_per_pix, left_fitx*xm_per_pix, 2)
+        right_fit_cr = np.polyfit(ploty*ym_per_pix, right_fitx*xm_per_pix, 2)
+
+        # Define y-value where we want radius of curvature
+        # I'll choose the maximum y-value, corresponding to the bottom of the image
+        y_eval = np.max(ploty)
+
         # Calculate the new radii of curvature
         left_curverad = ((1 + (2*left_fit_cr[0]*y_eval*ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
         right_curverad = ((1 + (2*right_fit_cr[0]*y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
 
         # Now our radius of curvature is in meters
-        return left_curverad, right_curverad
+
+        # dist from lane...
+        h = warped_image.shape[0]
+        car_position = warped_image.shape[1]/2
+        l_fit_x_int = self.left_fit[0]*h**2 + self.left_fit[1]*h + self.left_fit[2]
+        r_fit_x_int = self.right_fit[0]*h**2 + self.right_fit[1]*h + self.right_fit[2]
+        lane_center_position = (r_fit_x_int + l_fit_x_int)/2
+        center_dist = (car_position - lane_center_position) * xm_per_pix
+
+        return left_curverad, right_curverad, center_dist
 
     def reproject(self, warped_image, org_image, p_mat_inv):
         warped = warped_image
@@ -279,11 +293,14 @@ class LanePolyfit:
 
         # Draw the lane onto the warped blank image
         cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
+        cv2.polylines(color_warp, np.int32([pts_left]), isClosed=False, color=(255,0,255), thickness=15)
+        cv2.polylines(color_warp, np.int32([pts_right]), isClosed=False, color=(0,255,255), thickness=15)
+
 
         # Warp the blank back to original image space using inverse perspective matrix (Minv)
         newwarp = cv2.warpPerspective(color_warp, Minv, (image.shape[1], image.shape[0])) 
         # Combine the result with the original image
-        result = cv2.addWeighted(undist, 1, newwarp, 0.3, 0)
+        result = cv2.addWeighted(image, 1, newwarp, 0.3, 0)
         return result
 
     def draw_init(self, image):
@@ -340,6 +357,22 @@ class LanePolyfit:
         plt.plot(right_fitx, ploty, color='yellow')
         plt.xlim(0, 1280)
         plt.ylim(720, 0)
+    
+    def draw_text(self, org_image, curv_rad, center_dist):
+        new_img = np.copy(org_image)
+        h = new_img.shape[0]
+        font = cv2.FONT_HERSHEY_DUPLEX
+        text = 'Curve radius: ' + '{:04.2f}'.format(curv_rad) + 'm'
+        cv2.putText(new_img, text, (40,70), font, 1.5, (200,255,155), 2, cv2.LINE_AA)
+        direction = ''
+        if center_dist > 0:
+            direction = 'right'
+        elif center_dist < 0:
+            direction = 'left'
+        abs_center_dist = abs(center_dist)
+        text = '{:04.3f}'.format(abs_center_dist) + 'm ' + direction + ' of center'
+        cv2.putText(new_img, text, (40,120), font, 1.5, (200,255,155), 2, cv2.LINE_AA)
+        return new_img
 
 def lane_polyfit_sliding_window_init(image, per_cent_of_view=0.5, nwindows=9, margin = 100, minpix=50):
     """Calculate 
@@ -554,13 +587,44 @@ def test_image_transform(camera_calibration, bird_eye_view):
 def test_lane_polyfit_on_image_sequence(img_proc):
     for fname in glob.glob('test_images/test*.jpg'):
         image = mpimage.imread(fname)
-        draw_before_after(image, img_proc.apply(image), cmap='gray')
+        t_image = img_proc.apply(image)
+        draw_before_after(image, t_image, cmap='gray')
         lane_pfit = lane_polyfit_sliding_window_init(t_image, 
                                                      per_cent_of_view=0.75, 
                                                      nwindows=4, 
                                                      margin=20, 
                                                      minpix=20)
         lane_pfit.draw_init(t_image)
+
+def test_lane_polyfit_and_print_info_on_image_sequence(img_proc):
+    for fname in glob.glob('test_images/test*.jpg'):
+        image = mpimage.imread(fname)
+        t_image = img_proc.apply(image)
+        draw_before_after(image, t_image, cmap='gray')
+        lane_pfit = lane_polyfit_sliding_window_init(t_image, 
+                                                     per_cent_of_view=0.75, 
+                                                     nwindows=4, 
+                                                     margin=20, 
+                                                     minpix=20)
+        lane_pfit.draw_init(t_image)
+        print("curvatures and distance: ", lane_pfit.rad_of_curvature_and_dist_in_world_space(t_image))
+
+def test_lane_polyfit_and_show_final_result_on_image_sequence(img_proc):
+    for fname in glob.glob('test_images/test*.jpg'):
+        image = mpimage.imread(fname)
+        t_image = img_proc.apply(image)
+        draw_before_after(image, t_image, cmap='gray')
+        lane_pfit = lane_polyfit_sliding_window_init(t_image, 
+                                                     per_cent_of_view=0.75, 
+                                                     nwindows=4, 
+                                                     margin=20, 
+                                                     minpix=20)
+        lane_pfit.draw_init(t_image)
+        reprojected_img = lane_pfit.reproject(t_image, image, img_proc.birds_eye_view.p_mat_inv)
+        cr_left, cr_right, dist = lane_pfit.rad_of_curvature_and_dist_in_world_space(t_image)
+        reprojected_img = lane_pfit.draw_text(reprojected_img, min(cr_left, cr_right), dist)
+        plt.imshow(reprojected_img)
+        plt.show()
 
 if __name__ == '__main__':
     cc = calibrate_camera_init()
@@ -569,11 +633,12 @@ if __name__ == '__main__':
     #test_image_transform(cc, bb)
     
     img_proc = ImageProcessing(cc, bb)
-    #image = mpimage.imread('test_images/test1.jpg')
+    #image = mpimage.imread('test_images/straight_lines1.jpg')
     #t_image = img_proc.apply(image)
     #draw_before_after(image, t_image, cmap='gray')
     #lane_pfit = lane_polyfit_sliding_window_init(t_image, per_cent_of_view=0.75, nwindows=5, margin=20, minpix=20)
     #lane_pfit.draw_init(t_image)
 
-    test_lane_polyfit_on_image_sequence(img_proc)
+    #test_lane_polyfit_on_image_sequence(img_proc)
+    test_lane_polyfit_and_print_info_on_image_sequence(img_proc)
 
