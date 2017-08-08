@@ -185,7 +185,7 @@ def region_of_interest(img, vertices):
     masked_image = cv2.bitwise_and(img, mask)
     return masked_image
 
-class ImageProcessing:
+class ImageTransformation:
     camera_calibration = None
     birds_eye_view = None
 
@@ -322,17 +322,17 @@ class LanePolyfit:
         plt.ylim(720, 0)
         plt.show()
     
-    def draw_next(self, image):
+    def draw_next(self, image, margin):
         binary_warped = image
         left_fit, right_fit = self.left_fit, self.right_fit
         left_lane_inds, right_lane_inds = self.left_lane_inds, self.right_lane_inds
         nonzerox, nonzeroy = self.nonzero_xy(binary_warped)
+        out_img = self.out_img
 
         # Generate x and y values for plotting
         ploty, left_fitx, right_fitx = self.gen_xy_for_plotting(binary_warped)
 
         # Create an image to draw on and an image to show the selection window
-        self.out_img = np.dstack((binary_warped, binary_warped, binary_warped))*255
         window_img = np.zeros_like(out_img)
 
         # Color in left and right line pixels
@@ -357,7 +357,8 @@ class LanePolyfit:
         plt.plot(right_fitx, ploty, color='yellow')
         plt.xlim(0, 1280)
         plt.ylim(720, 0)
-    
+        plt.show()
+
     def draw_text(self, org_image, curv_rad, center_dist):
         new_img = np.copy(org_image)
         h = new_img.shape[0]
@@ -463,12 +464,15 @@ def lane_polyfit_sliding_window_init(image, per_cent_of_view=0.5, nwindows=9, ma
 
     return LanePolyfit(left_fit, right_fit, left_lane_inds, right_lane_inds, out_img)
 
-def lane_polyfit_sliding_window_next(image, lane_polyfit, margin=100):
+def lane_polyfit_sliding_window_next(lane_polyfit, image, margin=100):
     binary_warped = image
     left_fit, right_fit = \
         lane_polyfit.left_fit, lane_polyfit.right_fit
     left_lane_inds, right_lane_inds = \
         lane_polyfit.left_lane_inds, lane_polyfit.right_lane_inds
+
+    # Create an output image to draw on and visualize the result
+    out_img = np.dstack((binary_warped, binary_warped, binary_warped))*255
 
     # Assume you now have a new warped binary image
     # from the next frame of video (also called "binary_warped")
@@ -577,17 +581,17 @@ def test_image_transform(camera_calibration, bird_eye_view):
     images_after_color_transform_should_acentuate_lanes('test_images/test1.jpg')
     images_after_color_transform_should_acentuate_lanes('test_images/test2.jpg')
 
-    img_proc = ImageProcessing(cc, bb)
+    img_trans = ImageTransformation(cc, bb)
     for fname in glob.glob('test_images/test*.jpg'):
         image = mpimage.imread(fname)
-        draw_before_after(image, img_proc.apply(image), cmap='gray')
+        draw_before_after(image, img_trans.apply(image), cmap='gray')
         # like line break in an interactive shell...
         plt.show()
 
-def test_lane_polyfit_on_image_sequence(img_proc):
+def test_lane_polyfit_on_image_sequence(img_trans):
     for fname in glob.glob('test_images/test*.jpg'):
         image = mpimage.imread(fname)
-        t_image = img_proc.apply(image)
+        t_image = img_trans.apply(image)
         draw_before_after(image, t_image, cmap='gray')
         lane_pfit = lane_polyfit_sliding_window_init(t_image, 
                                                      per_cent_of_view=0.65, 
@@ -596,10 +600,10 @@ def test_lane_polyfit_on_image_sequence(img_proc):
                                                      minpix=20)
         lane_pfit.draw_init(t_image)
 
-def test_lane_polyfit_and_print_info_on_image_sequence(img_proc):
+def test_lane_polyfit_and_print_info_on_image_sequence(img_trans):
     for fname in glob.glob('test_images/test*.jpg'):
         image = mpimage.imread(fname)
-        t_image = img_proc.apply(image)
+        t_image = img_trans.apply(image)
         draw_before_after(image, t_image, cmap='gray')
         lane_pfit = lane_polyfit_sliding_window_init(t_image, 
                                                      per_cent_of_view=0.65, 
@@ -609,10 +613,10 @@ def test_lane_polyfit_and_print_info_on_image_sequence(img_proc):
         lane_pfit.draw_init(t_image)
         print("curvatures and distance: ", lane_pfit.rad_of_curvature_and_dist_in_world_space(t_image))
 
-def test_lane_polyfit_and_show_final_result_on_image_sequence(img_proc):
+def test_lane_polyfit_and_show_final_result_on_image_sequence(img_trans):
     for fname in glob.glob('test_images/test*.jpg'):
         image = mpimage.imread(fname)
-        t_image = img_proc.apply(image)
+        t_image = img_trans.apply(image)
         draw_before_after(image, t_image, cmap='gray')
         lane_pfit = lane_polyfit_sliding_window_init(t_image, 
                                                      per_cent_of_view=0.65, 
@@ -620,10 +624,78 @@ def test_lane_polyfit_and_show_final_result_on_image_sequence(img_proc):
                                                      margin=30, 
                                                      minpix=20)
         lane_pfit.draw_init(t_image)
-        reprojected_img = lane_pfit.reproject(t_image, image, img_proc.birds_eye_view.p_mat_inv)
+        reprojected_img = lane_pfit.reproject(t_image, image, img_trans.birds_eye_view.p_mat_inv)
         cr_left, cr_right, dist = lane_pfit.rad_of_curvature_and_dist_in_world_space(t_image)
         reprojected_img = lane_pfit.draw_text(reprojected_img, min(cr_left, cr_right), dist)
         plt.imshow(reprojected_img)
+        plt.show()
+
+def test_lane_polyfit_use_next_and_show_final_result_on_image_sequence(img_trans):
+    lane_pfit = None
+    per_cent_of_view=0.65
+    nwindows=4
+    margin = 30
+    minpix=20
+    for fname in glob.glob('test_images/test*.jpg'):
+        image = mpimage.imread(fname)
+        t_image = img_trans.apply(image)
+        if lane_pfit == None:
+            lane_pfit = lane_polyfit_sliding_window_init(t_image, 
+                                                         per_cent_of_view=per_cent_of_view, 
+                                                         nwindows=nwindows, 
+                                                         margin=margin, 
+                                                         minpix=minpix)
+            lane_pfit.draw_init(t_image)
+        else:
+            lane_pfit = lane_polyfit_sliding_window_next(lane_pfit, t_image, margin=30)
+            lane_pfit.draw_next(t_image, margin)
+
+        reprojected_img = lane_pfit.reproject(t_image, image, img_trans.birds_eye_view.p_mat_inv)
+        cr_left, cr_right, dist = lane_pfit.rad_of_curvature_and_dist_in_world_space(t_image)
+        reprojected_img = lane_pfit.draw_text(reprojected_img, min(cr_left, cr_right), dist)
+        plt.imshow(reprojected_img)
+        plt.show()
+
+g_img_trans = None
+g_prv_lane_pfit, g_cur_lane_pfit = None, None
+g_per_cent_of_view = 0.65
+g_nwindows = 4
+g_margin = 30
+g_minpix = 20
+
+def process_image(image):
+    global g_prv_lane_pfit
+    global g_cur_lane_pfit
+    t_image = g_img_trans.apply(image)
+    if g_prv_lane_pfit == None:
+        g_cur_lane_pfit = lane_polyfit_sliding_window_init(t_image,
+                                                           per_cent_of_view=g_per_cent_of_view,
+                                                           nwindows=g_nwindows,
+                                                           margin=g_margin,
+                                                           minpix=g_minpix)
+    else:
+        g_cur_lane_pfit = lane_polyfit_sliding_window_next(g_prv_lane_pfit,
+                                                           t_image,
+                                                           g_margin)
+
+    reprojected_img = g_cur_lane_pfit.reproject(t_image, 
+                                                image, 
+                                                g_img_trans.birds_eye_view.p_mat_inv)
+    cr_left, cr_right, dist = g_cur_lane_pfit.rad_of_curvature_and_dist_in_world_space(t_image)
+    reprojected_img = g_cur_lane_pfit.draw_text(reprojected_img, min(cr_left, cr_right), dist)
+    return reprojected_img
+
+def test_lane_polyfit_processor_on_image_sequence(img_trans):
+    global g_prv_lane_pfit
+    global g_cur_lane_pfit
+    global g_img_trans
+   
+    g_img_trans = img_trans
+
+    for fname in glob.glob('test_images/test*.jpg'):
+        image = mpimage.imread(fname)
+        res_image = process_image(image)
+        plt.imshow(res_image)
         plt.show()
 
 if __name__ == '__main__':
@@ -632,13 +704,13 @@ if __name__ == '__main__':
     
     #test_image_transform(cc, bb)
     
-    img_proc = ImageProcessing(cc, bb)
+    img_trans = ImageTransformation(cc, bb)
     #image = mpimage.imread('test_images/straight_lines1.jpg')
-    #t_image = img_proc.apply(image)
+    #t_image = img_trans.apply(image)
     #draw_before_after(image, t_image, cmap='gray')
     #lane_pfit = lane_polyfit_sliding_window_init(t_image, per_cent_of_view=0.75, nwindows=5, margin=20, minpix=20)
     #lane_pfit.draw_init(t_image)
 
-    #test_lane_polyfit_on_image_sequence(img_proc)
-    test_lane_polyfit_and_print_info_on_image_sequence(img_proc)
-
+    #test_lane_polyfit_on_image_sequence(img_trans)
+    #test_lane_polyfit_use_next_and_show_final_result_on_image_sequence(img_trans)
+    test_lane_polyfit_processor_on_image_sequence(img_trans)
