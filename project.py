@@ -1,5 +1,6 @@
 import cv2
 import glob
+import os
 import numpy as np
 from math import *
 import matplotlib.pyplot as plt
@@ -217,6 +218,9 @@ class LanePolyfit:
     left_lane_inds = None
     right_lane_inds = None
     out_img = None
+    # Define conversions in x and y from pixels space to meters
+    ym_per_pix = 30/720 # meters per pixel in y dimension
+    xm_per_pix = 3.7/700 # meters per pixel in x dimension
 
     def __init__(self, 
                  left_fit, right_fit, 
@@ -243,26 +247,36 @@ class LanePolyfit:
         right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
         return ploty, left_fitx, right_fitx 
 
+    def estimated_lane_width(self, param_vals):
+        poly_l = np.poly1d(self.left_fit)
+        poly_r = np.poly1d(self.right_fit)
+        #left_p = poly_l(param_vals)
+        #right_p = poly_r(param_vals)
+        #min_l_x = numpy.min(left_p)
+        #max_l_x = numpy.max(left_p)
+
+        #min_r_x = numpy.min(right_p)
+        #max_r_x = numpy.max(right_p)
+
+        #return (max(max_r_x, min_r_x) - min(min_l_x, min_r_x))*self.xm_per_pix
+        return numpy.linalg.norm(poly_l - poly_r)*self.xm_per_pix
+
     def rad_of_curvature_and_dist_in_world_space(self, image):
         warped_image = image
-
-        # Define conversions in x and y from pixels space to meters
-        ym_per_pix = 30/720 # meters per pixel in y dimension
-        xm_per_pix = 3.7/700 # meters per pixel in x dimension
 
         ploty, left_fitx, right_fitx = self.gen_xy_for_plotting(warped_image)
 
         # Fit new polynomials to x,y in world space
-        left_fit_cr = np.polyfit(ploty*ym_per_pix, left_fitx*xm_per_pix, 2)
-        right_fit_cr = np.polyfit(ploty*ym_per_pix, right_fitx*xm_per_pix, 2)
+        left_fit_cr = np.polyfit(ploty*self.ym_per_pix, left_fitx*self.xm_per_pix, 2, rcond=0.001)
+        right_fit_cr = np.polyfit(ploty*self.ym_per_pix, right_fitx*self.xm_per_pix, 2, rcond=0.001)
 
         # Define y-value where we want radius of curvature
         # I'll choose the maximum y-value, corresponding to the bottom of the image
         y_eval = np.max(ploty)
 
         # Calculate the new radii of curvature
-        left_curverad = ((1 + (2*left_fit_cr[0]*y_eval*ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
-        right_curverad = ((1 + (2*right_fit_cr[0]*y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
+        left_curverad = ((1 + (2*left_fit_cr[0]*y_eval*self.ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
+        right_curverad = ((1 + (2*right_fit_cr[0]*y_eval*self.ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
 
         # Now our radius of curvature is in meters
 
@@ -272,7 +286,7 @@ class LanePolyfit:
         l_fit_x_int = self.left_fit[0]*h**2 + self.left_fit[1]*h + self.left_fit[2]
         r_fit_x_int = self.right_fit[0]*h**2 + self.right_fit[1]*h + self.right_fit[2]
         lane_center_position = (r_fit_x_int + l_fit_x_int)/2
-        center_dist = (car_position - lane_center_position) * xm_per_pix
+        center_dist = (car_position - lane_center_position) * self.xm_per_pix
 
         return left_curverad, right_curverad, center_dist
 
@@ -359,7 +373,7 @@ class LanePolyfit:
         plt.ylim(720, 0)
         plt.show()
 
-    def draw_text(self, org_image, curv_rad, center_dist):
+    def draw_text(self, org_image, curv_rad, center_dist, lane_width = None):
         new_img = np.copy(org_image)
         h = new_img.shape[0]
         font = cv2.FONT_HERSHEY_DUPLEX
@@ -373,6 +387,10 @@ class LanePolyfit:
         abs_center_dist = abs(center_dist)
         text = '{:04.3f}'.format(abs_center_dist) + 'm ' + direction + ' of center'
         cv2.putText(new_img, text, (40,120), font, 1.5, (200,255,155), 2, cv2.LINE_AA)
+
+        if lane_width != None:
+            text = 'Lane width: ' + '{:4.1f}'.format(lane_width) + 'm '
+            cv2.putText(new_img, text, (40,170), font, 1.5, (200,255,155), 2, cv2.LINE_AA)
         return new_img
 
 def lane_polyfit_sliding_window_init(image, per_cent_of_view=0.5, nwindows=9, margin = 100, minpix=50):
@@ -530,7 +548,7 @@ def images_should_be_undistorted(camera_calibration, image_file):
     undist_image = camera_calibration.undistort(image)
     draw_before_after(image, undist_image, txt_after='Undistorted image')
     #return image, undist_image
-        
+            
 def images_should_be_transformed_to_birds_eye_perspective(camera_calibration, birds_eye_view, image_file):
     image = mpimage.imread(image_file)
     p_image = birds_eye_view.transform(camera_calibration.undistort(image))
@@ -657,39 +675,75 @@ def test_lane_polyfit_use_next_and_show_final_result_on_image_sequence(img_trans
         plt.show()
 
 g_img_trans = None
-g_prv_lane_pfit, g_cur_lane_pfit = None, None
+g_prv_lane_pfit = None, None
+g_prv_cr, g_prv_dist, g_prv_lane_width = None, None, None
 g_per_cent_of_view = 0.65
 g_nwindows = 4
 g_margin = 30
 g_minpix = 20
+g_exp_line_width = 2.0
 
 def process_image(image):
     global g_prv_lane_pfit
-    global g_cur_lane_pfit
-    t_image = g_img_trans.apply(image)
-    if g_prv_lane_pfit == None:
-        g_cur_lane_pfit = lane_polyfit_sliding_window_init(t_image,
-                                                           per_cent_of_view=g_per_cent_of_view,
-                                                           nwindows=g_nwindows,
-                                                           margin=g_margin,
-                                                           minpix=g_minpix)
-    else:
-        g_cur_lane_pfit = lane_polyfit_sliding_window_next(g_prv_lane_pfit,
-                                                           t_image,
-                                                           g_margin)
+    global g_prv_cr
+    global g_prv_dist
+    global g_prv_lane_width
 
-    reprojected_img = g_cur_lane_pfit.reproject(t_image, 
-                                                image, 
-                                                g_img_trans.birds_eye_view.p_mat_inv)
-    cr_left, cr_right, dist = g_cur_lane_pfit.rad_of_curvature_and_dist_in_world_space(t_image)
-    reprojected_img = g_cur_lane_pfit.draw_text(reprojected_img, min(cr_left, cr_right), dist)
+    t_image = g_img_trans.apply(image)
+
+
+    if g_prv_lane_pfit == None:
+        print("Initializing...")
+        cur_lane_pfit = lane_polyfit_sliding_window_init(t_image,
+                                                        per_cent_of_view=g_per_cent_of_view,
+                                                        nwindows=g_nwindows,
+                                                        margin=g_margin,
+                                                        minpix=g_minpix)
+    else:
+        cur_lane_pfit = lane_polyfit_sliding_window_next(g_prv_lane_pfit,
+                                                            t_image,
+                                                            g_margin)
+
+    # lane width sanity check: allow deviations of 10%
+    lane_width = cur_lane_pfit.estimated_lane_width(np.linspace(0, t_image.shape[0]-1, 5))
+    #print("Estimated lane width: {} m".format(lane_width)) 
+
+    #if g_prv_lane_width != None:
+    #    dev = (10. * g_prv_lane_width)/100. # 10%
+    #    if (g_prv_lane_width - dev) < lane_width and lane_width < (g_prv_lane_width + dev):
+    #        # we're good
+    #        break
+    #    else:
+    #        # repeat the computation
+    #        g_prv_lane_pfit = None
+    #        g_prv_lane_width = None
+    #else:
+    #    break
+
+    cr_left, cr_right, dist = cur_lane_pfit.rad_of_curvature_and_dist_in_world_space(t_image)
+    cr = min(cr_left, cr_right)
+
+    reprojected_img = cur_lane_pfit.reproject(t_image, 
+                                              image, 
+                                              g_img_trans.birds_eye_view.p_mat_inv)
+
+    
+    reprojected_img = cur_lane_pfit.draw_text(reprojected_img, cr, dist, lane_width)
+
+    # store current values:
+    #g_prv_lane_pfit = cur_lane_pfit
+    g_prv_cr = cr
+    g_prv_dist = dist
+    g_prv_lane_width = lane_width
+
     return reprojected_img
 
 def test_lane_polyfit_processor_on_image_sequence(img_trans):
     global g_prv_lane_pfit
-    global g_cur_lane_pfit
     global g_img_trans
    
+    g_prv_lane_pfit = None
+    g_prv_cr, g_prv_dist, g_prv_lane_width = None, None, None
     g_img_trans = img_trans
 
     for fname in glob.glob('test_images/test*.jpg'):
@@ -697,6 +751,34 @@ def test_lane_polyfit_processor_on_image_sequence(img_trans):
         res_image = process_image(image)
         plt.imshow(res_image)
         plt.show()
+
+def test_lane_polyfit_processor_on_video(img_trans, video_fname):
+    global g_prv_lane_pfit
+    global g_cur_lane_pfit
+    global g_img_trans
+   
+    g_prv_lane_pfit = None
+    g_prv_cr, g_prv_dist, g_prv_lane_width = None, None, None
+    g_img_trans = img_trans
+
+    ## To speed up the testing process you may want to try your pipeline on a shorter subclip of the video
+    ## To do so add .subclip(start_second,end_second) to the end of the line below
+    ## Where start_second and end_second are integer values representing the start and end of the subclip
+    ## You may also uncomment the following line for a subclip of the first 5 seconds
+    ##clip1 = VideoFileClip("project_video.mp4").subclip(0,5)
+    
+    output = 'output_' + video_fname + '.mp4'
+    input = video_fname + '.mp4'
+
+    # delete output if exists
+    if os.path.exists(output):
+        os.remove(output)
+
+    clip = VideoFileClip(input)
+    output_clip = clip.fl_image(process_image) #NOTE: this function expects color images!!
+    output_clip.write_videofile(output, audio=False)
+    output_clip.reader.close()
+    output_clip.audio.reader.close_proc()
 
 if __name__ == '__main__':
     cc = calibrate_camera_init()
@@ -711,6 +793,7 @@ if __name__ == '__main__':
     #lane_pfit = lane_polyfit_sliding_window_init(t_image, per_cent_of_view=0.75, nwindows=5, margin=20, minpix=20)
     #lane_pfit.draw_init(t_image)
 
-    #test_lane_polyfit_on_image_sequence(img_trans)
+    test_lane_polyfit_on_image_sequence(img_trans)
     #test_lane_polyfit_use_next_and_show_final_result_on_image_sequence(img_trans)
-    test_lane_polyfit_processor_on_image_sequence(img_trans)
+    #test_lane_polyfit_processor_on_image_sequence(img_trans)
+    #test_lane_polyfit_processor_on_video(img_trans, 'project_video')

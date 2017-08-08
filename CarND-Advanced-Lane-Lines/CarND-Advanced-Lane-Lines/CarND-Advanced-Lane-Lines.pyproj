@@ -43,9 +43,7 @@
     <Content Include="..\..\README.md">
       <Link>README.md</Link>
     </Content>
-    <Content Include="..\..\writeup_template.md">
-      <Link>writeup_template.md</Link>
-    </Content>
+    <Content Include="..\..\writeup.md" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\..\project.py">
