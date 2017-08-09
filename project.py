@@ -278,9 +278,9 @@ class LanePolyfit:
         left_curverad = ((1 + (2*left_fit_cr[0]*y_eval*self.ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
         right_curverad = ((1 + (2*right_fit_cr[0]*y_eval*self.ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
 
-        # Now our radius of curvature is in meters
+        # Now our radius of curvature is in meters...
 
-        # dist from lane...
+        # Calculate distance from lane center position...
         h = warped_image.shape[0]
         car_position = warped_image.shape[1]/2
         l_fit_x_int = self.left_fit[0]*h**2 + self.left_fit[1]*h + self.left_fit[2]
@@ -682,6 +682,8 @@ g_nwindows = 4
 g_margin = 30
 g_minpix = 20
 g_exp_line_width = 2.0
+g_lane_width_upperb = 2.2
+g_lane_width_lowerb = 1.8
 
 def process_image(image):
     global g_prv_lane_pfit
@@ -692,33 +694,38 @@ def process_image(image):
     t_image = g_img_trans.apply(image)
 
 
-    if g_prv_lane_pfit == None:
-        print("Initializing...")
-        cur_lane_pfit = lane_polyfit_sliding_window_init(t_image,
-                                                        per_cent_of_view=g_per_cent_of_view,
-                                                        nwindows=g_nwindows,
-                                                        margin=g_margin,
-                                                        minpix=g_minpix)
-    else:
-        cur_lane_pfit = lane_polyfit_sliding_window_next(g_prv_lane_pfit,
-                                                            t_image,
-                                                            g_margin)
-
-    # lane width sanity check: allow deviations of 10%
-    lane_width = cur_lane_pfit.estimated_lane_width(np.linspace(0, t_image.shape[0]-1, 5))
-    #print("Estimated lane width: {} m".format(lane_width)) 
-
-    #if g_prv_lane_width != None:
-    #    dev = (10. * g_prv_lane_width)/100. # 10%
-    #    if (g_prv_lane_width - dev) < lane_width and lane_width < (g_prv_lane_width + dev):
-    #        # we're good
-    #        break
-    #    else:
-    #        # repeat the computation
-    #        g_prv_lane_pfit = None
-    #        g_prv_lane_width = None
+    #if g_prv_lane_pfit == None:
+    cur_lane_pfit = lane_polyfit_sliding_window_init(t_image,
+                                                    per_cent_of_view=g_per_cent_of_view,
+                                                    nwindows=g_nwindows,
+                                                    margin=g_margin,
+                                                    minpix=g_minpix)
     #else:
-    #    break
+    #    cur_lane_pfit = lane_polyfit_sliding_window_next(g_prv_lane_pfit,
+    #                                                     t_image,
+    #                                                      margin=g_margin)
+
+    # lane width sanity check: allow only defined deviations from the expected value
+    lane_width = cur_lane_pfit.estimated_lane_width(np.linspace(0, t_image.shape[0]-1, 5))
+    print("Estimated lane width(0): {} m".format(lane_width)) 
+
+    attempt = 0
+    while attempt < 2 and (lane_width < g_lane_width_lowerb or g_lane_width_upperb < lane_width):
+        if attempt == 0:
+            cur_lane_pfit = lane_polyfit_sliding_window_init(t_image,
+                                                    per_cent_of_view=g_per_cent_of_view,
+                                                    nwindows=g_nwindows + 3,
+                                                    margin=int(g_margin + g_margin/2),
+                                                    minpix=int(g_minpix + g_minpix/2))
+            lane_width = cur_lane_pfit.estimated_lane_width(np.linspace(0, t_image.shape[0]-1, 5))
+            print("Estimated lane width(1): {} m".format(lane_width)) 
+            attempt = 1
+        elif attempt == 1:
+            if g_prv_lane_pfit != None:
+                cur_lane_pfit = g_prv_lane_pfit
+            lane_width = cur_lane_pfit.estimated_lane_width(np.linspace(0, t_image.shape[0]-1, 5))
+            print("Estimated lane width(2): {} m".format(lane_width))
+            attempt = 2
 
     cr_left, cr_right, dist = cur_lane_pfit.rad_of_curvature_and_dist_in_world_space(t_image)
     cr = min(cr_left, cr_right)
@@ -731,7 +738,7 @@ def process_image(image):
     reprojected_img = cur_lane_pfit.draw_text(reprojected_img, cr, dist, lane_width)
 
     # store current values:
-    #g_prv_lane_pfit = cur_lane_pfit
+    g_prv_lane_pfit = cur_lane_pfit
     g_prv_cr = cr
     g_prv_dist = dist
     g_prv_lane_width = lane_width
@@ -774,11 +781,13 @@ def test_lane_polyfit_processor_on_video(img_trans, video_fname):
     if os.path.exists(output):
         os.remove(output)
 
-    clip = VideoFileClip(input)
-    output_clip = clip.fl_image(process_image) #NOTE: this function expects color images!!
-    output_clip.write_videofile(output, audio=False)
-    output_clip.reader.close()
-    output_clip.audio.reader.close_proc()
+    try:
+        clip = VideoFileClip(input)
+        output_clip = clip.fl_image(process_image) #NOTE: this function expects color images!!
+    finally:
+        output_clip.write_videofile(output, audio=False)
+        output_clip.reader.close()
+        output_clip.audio.reader.close_proc()
 
 if __name__ == '__main__':
     cc = calibrate_camera_init()
@@ -793,7 +802,7 @@ if __name__ == '__main__':
     #lane_pfit = lane_polyfit_sliding_window_init(t_image, per_cent_of_view=0.75, nwindows=5, margin=20, minpix=20)
     #lane_pfit.draw_init(t_image)
 
-    test_lane_polyfit_on_image_sequence(img_trans)
+    #test_lane_polyfit_on_image_sequence(img_trans)
     #test_lane_polyfit_use_next_and_show_final_result_on_image_sequence(img_trans)
     #test_lane_polyfit_processor_on_image_sequence(img_trans)
-    #test_lane_polyfit_processor_on_video(img_trans, 'project_video')
+    test_lane_polyfit_processor_on_video(img_trans, 'project_video')

@@ -19,7 +19,7 @@ The goals / steps of this project are the following:
 [image41]: ./output_images/birds-eye-1.jpeg "Birds eye view"
 [image42]: ./output_images/birds-eye-3.jpeg "Birds eye view after binarization"
 [image5]: ./output_images/polyfit-1.jpeg "Fit Visual"
-[image6]: ./examples/example_output.jpg "Output"
+[image6]: ./output_images/reprojected-1.jpeg "Output"
 [video1]: ./project_video.mp4 "Video"
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/571/view) Points
@@ -53,17 +53,17 @@ I then used the output `objpoints` and `imgpoints` to compute the camera calibra
 To demonstrate this step, I will describe how I apply the distortion correction to one of the test images like this one:
 ![Distorted vs. undistorted comparison][image2]
 
-I use the functions ``calibrate_camera_init`` and ``calibrate_camera`` to create an immutable object of type ``CameraCalibration``. This object provides a method ``undistort`` which hwen called well "undistorts" the image according to camera calibration. The camera was calibrated using the chessboard patterns provided by Udacity.
+I use the functions ``calibrate_camera_init`` and ``calibrate_camera`` to create an immutable object of type ``CameraCalibration``. This object provides a method ``undistort`` which applies the stored transformation to the input parameter image according to camera calibration. The camera was calibrated using the chessboard patterns provided by Udacity.
 
 #### 2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
 
-I used a combination of color and gradient thresholds to generate a binary image (thresholding steps at lines 140 through 163 in `project.py`) in function ``threshold_transform``. In addition, after the projective transform of the image, I zeroed everything outside of the expected region in the image using the method from the first lane recognition project. The implementation can be seen in functiobn ``region_of_interest`` at lines 165 through 187 in ``project.py``. Here's an example of my output for this step. 
+I used a combination of color and gradient thresholds to generate a binary image (thresholding steps at lines 140 through 163 in `project.py`) in function ``threshold_transform``. In addition, after the projective transform of the image, I zeroed everything outside of the expected region in the image using the method from the first lane recognition project. The implementation is in function ``region_of_interest`` at lines 165 through 187 in ``project.py``. Here's an example of my output for this step before perspective transformation and before masking the region outside of the lane view. 
 
 ![Binarized image][image3]
 
 #### 3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
 
-The code for my perspective transform includes a class called `BirdsEyeView` and functions called `birds_eye_view` and `birds_eye_view_init`, which appears in lines 70 through 138 in the file `project.py`.  The `birds_eye_view_init` function takes as inputs an reference image (`ref_img`), as well as a `CameraCalibration` object (`cam_cal`).  I chose the hardcode the source and destination points in the following manner (`w` and `h` denote the width and hight of the image respectively):
+The code for my perspective transform includes a class called `BirdsEyeView` and functions called `birds_eye_view` and `birds_eye_view_init`, which appears at lines 70 through 138 in the file `project.py`.  The `birds_eye_view_init` function takes as inputs an reference image (`ref_img`), as well as a `CameraCalibration` object (`cam_cal`).  I chose the hardcode the source and destination points in the following manner (`w` and `h` denote the width and hight of the image respectively):
 
 ```python
 src = np.float32([(575,464),
@@ -76,11 +76,11 @@ dst = np.float32([(450,0),
                   (w-450,h)])
 ```
 
-I verified that my perspective transform was working as expected by drawing the originakl and transformed images next to each other and verified that the lines appear parallel in the transofrmed image image.
+I verified that my perspective transform was working as expected by drawing the original and transformed images next to each other and verified that the lines appear parallel in the transofrmed image image.
 
 ![After perspective transform][image41]
 
-The next image shows the images after transformation into bird's eye perspective and binarization:
+The next image shows the images after transformation into bird's eye perspective and binarization (top) and after clipping of the region outside of the lane view (bottom):
 
 ![After perspective transform and binarization][image42]
 
@@ -92,21 +92,21 @@ The class `LanePolyFit` defines following additional methods (plus some debuggin
 
 * `reproject` projects the input image to the world space
 * `rad_of_curvature_and_dist_in_world_space` calculates the required parameters
-* `estimated_lane_width` estimates the width of the lane
+* `estimated_lane_width` estimates the width of the lane. This value is used to sanity check of the estination - it is assumed that it should not change too rapidly in between frames. 
 
-The non-zero pixels inside each windows are identified and used as input data for 2nd degree approximation. The best values for the parameters (number of windows, margin width etc.) were found by experimentation.
+The non-zero pixels inside each window are identified and used as input data for 2nd degree approximation. The best values for the parameters (number of windows, margin width etc.) were found by experimentation. The two images below show the input data for the sliding windows procedure and the image in the bottom row shows the data for approximation and the resulting curves.
 
-![Demostration of the polynomial fitting][image5]
+![Demonstration of the polynomial fitting][image5]
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
-I did this in lines # through # in my code in `my_other_file.py`
+I did this in lines 264 through 291 in my code in `project.py`. The method 'rad_of_curvature_and_dist_in_world_space' of the class 'LanePolyFit' is responsible for the implementation. I used the estimated pixel-to-meter ratio for US highways to convert from pixels to meters.   
 
 #### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
-I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
+I implemented this step in lines 291 through 381 in my code in `project.py` in the method `reproject`.  Here is an example of my result on a test image:
 
-![alt text][image6]
+![Reprojected image with lane area][image6]
 
 ---
 
@@ -114,7 +114,7 @@ I implemented this step in lines # through # in my code in `yet_another_file.py`
 
 #### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
 
-Here's a [link to my video result](./project_video.mp4)
+Here's a [link to my video result](./output_project_video.mp4)
 
 ---
 
@@ -122,4 +122,12 @@ Here's a [link to my video result](./project_video.mp4)
 
 #### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
+The hardest problem was to come up with a reliable test for failure. I ended up using the estimation of the lane width: if this value is not in the expected range then the tracker considers this as a failure and attempts a restart of the algorithm. If that fails, the estimation from previous frame is used. In my opinion this is one of the weakest point of the implementation. Very likely this logic would fail when the vehicle attempts to switch lanes.
+
+If I had more time I would try following alternative procedures:
+
+* Better error handling and failure recovery. My implementation contains only basic error handling and is not capable of recovering from serious failures.
+* More robust data preparation for approximation. The data is too scattered which causes instabilities in the resulting curves.
+* Synchronized approximation. The lane curves shouldn't be approximated independently. Instead one should utilize the fact that they are logically offsets of each other.
+* Better criteria for failure recognition
+* Incorporate predictions into the estimation and use some sort of verification of the predicted values based on observation.  
