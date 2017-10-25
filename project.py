@@ -62,8 +62,8 @@ def calibrate_camera(cal_images, nx, ny):
     cam_cal = CameraCalibration(mtx=mtx, dst=dst, nx=nx, ny=ny, cal_images=cal_images)
     return cam_cal
         
-def calibrate_camera_init():
-    nx, ny, cal_images = 9, 6, glob.glob('camera_cal/calibration*.jpg')
+def calibrate_camera_init(camera_cal_folder):
+    nx, ny, cal_images = 9, 6, glob.glob(camera_cal_folder)
     cam_cal = calibrate_camera(cal_images, nx, ny)
     return cam_cal
 
@@ -133,9 +133,32 @@ def birds_eye_view(ref_image):
     p_mat_inv = cv2.getPerspectiveTransform(dst, src)
     return BirdsEyeView(src=src, dst=dst, p_mat=p_mat, p_mat_inv=p_mat_inv, ref_image=ref_image) 
 
+def birds_eye_view_garching(ref_image):
+    """Calculate perspective transform for a road image from the test set 
+    """
+    # define source and destination points for transform
+    w, h = ref_image.shape[1], ref_image.shape[0]
+    src = np.float32([(643,338),
+                      (708,338),
+                      (398,500), 
+                      (957,500)])
+    dst = np.float32([(450,0),
+                      (w-450,0),
+                      (450,h),
+                      (w-450,h)])
+    # use cv2.getPerspectiveTransform() to get p_mat, the transform matrix
+    p_mat = cv2.getPerspectiveTransform(src, dst)
+    p_mat_inv = cv2.getPerspectiveTransform(dst, src)
+    return BirdsEyeView(src=src, dst=dst, p_mat=p_mat, p_mat_inv=p_mat_inv, ref_image=ref_image) 
+
+
 def birds_eye_view_init(cam_cal, ref_image_fname = 'test_images/straight_lines1.jpg'):
     ref_image = mpimage.imread(ref_image_fname)
     return birds_eye_view(cam_cal.undistort(ref_image))
+
+def birds_eye_view_init_garching(cam_cal, ref_image_fname = 'test_images_garching/straight_lines1.jpg'):
+    ref_image = mpimage.imread(ref_image_fname)
+    return birds_eye_view_garching(cam_cal.undistort(ref_image))
 
 def threshold_transform(img, s_thresh=(170, 255), sx_thresh=(20, 100)):
     img = np.copy(img)
@@ -230,6 +253,15 @@ class LanePolyfit:
         self.left_lane_inds, self.right_lane_inds = left_lane_inds, right_lane_inds
         self.out_img = out_img
 
+    def has_fit(self):
+        return self.left_fit != None and self.right_fit != None
+
+    def has_degree(self, deg):
+        if self.has_fit():
+            return self.left_fit.size == deg + 1
+        else:
+            return False
+
     def nonzero_xy(self, image):
         nonzero = image.nonzero()
         nonzeroy = np.array(nonzero[0])
@@ -237,31 +269,40 @@ class LanePolyfit:
         return nonzerox, nonzeroy
 
     def gen_xy_for_plotting(self, image):
+        if not self.has_fit():
+            return np.array([]), np.array([]), np.array([])
+
         binary_warped = image
         left_fit, right_fit = self.left_fit, self.right_fit
         left_lane_inds, right_lane_inds = self.left_lane_inds, self.right_lane_inds
 
         # Generate x and y values for plotting
         ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0] )
-        left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
-        right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+
+        if self.has_degree(2):
+            left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
+            right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+        elif self.has_degree(1):
+            left_fitx = left_fit[0]*ploty + left_fit[1]
+            right_fitx = right_fit[0]*ploty + right_fit[1]
+        else:
+            left_fitx = left_fit[0]
+            right_fitx = right_fit[0]
+
         return ploty, left_fitx, right_fitx 
 
     def estimated_lane_width(self, param_vals):
+        if not self.has_fit():
+            return 0.
+
         poly_l = np.poly1d(self.left_fit)
         poly_r = np.poly1d(self.right_fit)
-        #left_p = poly_l(param_vals)
-        #right_p = poly_r(param_vals)
-        #min_l_x = numpy.min(left_p)
-        #max_l_x = numpy.max(left_p)
-
-        #min_r_x = numpy.min(right_p)
-        #max_r_x = numpy.max(right_p)
-
-        #return (max(max_r_x, min_r_x) - min(min_l_x, min_r_x))*self.xm_per_pix
-        return numpy.linalg.norm(poly_l - poly_r)*self.xm_per_pix
+        return np.linalg.norm(poly_l - poly_r)*self.xm_per_pix
 
     def rad_of_curvature_and_dist_in_world_space(self, image):
+        if not self.has_fit() or self.has_degree(1):
+            return 0., 0., 0.
+
         warped_image = image
 
         ploty, left_fitx, right_fitx = self.gen_xy_for_plotting(warped_image)
@@ -294,6 +335,7 @@ class LanePolyfit:
         warped = warped_image
         image = org_image
         Minv = p_mat_inv
+
         ploty, left_fitx, right_fitx = self.gen_xy_for_plotting(warped_image)
         
         # Create an image to draw the lines on
@@ -307,9 +349,6 @@ class LanePolyfit:
 
         # Draw the lane onto the warped blank image
         cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
-        #cv2.polylines(color_warp, np.int32([pts_left]), isClosed=False, color=(255,0,255), thickness=15)
-        #cv2.polylines(color_warp, np.int32([pts_right]), isClosed=False, color=(0,255,255), thickness=15)
-
 
         # Warp the blank back to original image space using inverse perspective matrix (Minv)
         newwarp = cv2.warpPerspective(color_warp, Minv, (image.shape[1], image.shape[0])) 
@@ -477,8 +516,11 @@ def lane_polyfit_sliding_window_init(image, per_cent_of_view=0.5, nwindows=9, ma
     righty = nonzeroy[right_lane_inds] 
 
     # Fit a second order polynomial to each
-    left_fit = np.polyfit(lefty, leftx, 2)
-    right_fit = np.polyfit(righty, rightx, 2)
+    if lefty.size == 0 or righty.size == 0:
+        left_fit = right_fit = None
+    else:
+        left_fit = np.polyfit(lefty, leftx, 1)
+        right_fit = np.polyfit(righty, rightx, 1)
 
     return LanePolyfit(left_fit, right_fit, left_lane_inds, right_lane_inds, out_img)
 
@@ -606,8 +648,25 @@ def test_image_transform(camera_calibration, bird_eye_view):
         # like line break in an interactive shell...
         plt.show()
 
-def test_lane_polyfit_on_image_sequence(img_trans):
-    for fname in glob.glob('test_images/test*.jpg'):
+def test_image_transform_garching(camera_calibration, bird_eye_view):
+    cc = camera_calibration
+    bb = bird_eye_view
+    images_should_be_undistorted(cc, 'camera_cal_garching/CameraCalibration-01.jpg')
+    images_should_be_undistorted(cc, 'test_images_garching/test1.jpg')
+    images_should_be_transformed_to_birds_eye_perspective(cc, bb, 'test_images_garching/test1.jpg')
+    images_should_be_transformed_to_birds_eye_perspective(cc, bb, 'test_images_garching/test2.jpg')
+    images_after_color_transform_should_acentuate_lanes('test_images_garching/test1.jpg')
+    images_after_color_transform_should_acentuate_lanes('test_images_garching/test2.jpg')
+
+    img_trans = ImageTransformation(cc, bb)
+    for fname in glob.glob('test_images_garching/test*.jpg'):
+        image = mpimage.imread(fname)
+        draw_before_after(image, img_trans.apply(image), cmap='gray')
+        # like line break in an interactive shell...
+        plt.show()
+
+def test_lane_polyfit_on_image_sequence(img_trans, images_pattern = 'test_images/test*.jpg'):
+    for fname in glob.glob(images_pattern):
         image = mpimage.imread(fname)
         t_image = img_trans.apply(image)
         draw_before_after(image, t_image, cmap='gray')
@@ -618,8 +677,8 @@ def test_lane_polyfit_on_image_sequence(img_trans):
                                                      minpix=20)
         lane_pfit.draw_init(t_image)
 
-def test_lane_polyfit_and_print_info_on_image_sequence(img_trans):
-    for fname in glob.glob('test_images/test*.jpg'):
+def test_lane_polyfit_and_print_info_on_image_sequence(img_trans, images_pattern = 'test_images/test*.jpg'):
+    for fname in glob.glob(images_pattern):
         image = mpimage.imread(fname)
         t_image = img_trans.apply(image)
         draw_before_after(image, t_image, cmap='gray')
@@ -631,8 +690,8 @@ def test_lane_polyfit_and_print_info_on_image_sequence(img_trans):
         lane_pfit.draw_init(t_image)
         print("curvatures and distance: ", lane_pfit.rad_of_curvature_and_dist_in_world_space(t_image))
 
-def test_lane_polyfit_and_show_final_result_on_image_sequence(img_trans):
-    for fname in glob.glob('test_images/test*.jpg'):
+def test_lane_polyfit_and_show_final_result_on_image_sequence(img_trans, images_pattern = 'test_images/test*.jpg'):
+    for fname in glob.glob(images_pattern):
         image = mpimage.imread(fname)
         t_image = img_trans.apply(image)
         draw_before_after(image, t_image, cmap='gray')
@@ -648,13 +707,13 @@ def test_lane_polyfit_and_show_final_result_on_image_sequence(img_trans):
         plt.imshow(reprojected_img)
         plt.show()
 
-def test_lane_polyfit_use_next_and_show_final_result_on_image_sequence(img_trans):
+def test_lane_polyfit_use_next_and_show_final_result_on_image_sequence(img_trans, images_pattern = 'test_images/test*.jpg'):
     lane_pfit = None
     per_cent_of_view=0.65
     nwindows=4
     margin = 30
     minpix=20
-    for fname in glob.glob('test_images/test*.jpg'):
+    for fname in glob.glob(images_pattern):
         image = mpimage.imread(fname)
         t_image = img_trans.apply(image)
         if lane_pfit == None:
@@ -685,6 +744,32 @@ g_exp_line_width = 2.0
 g_lane_width_upperb = 2.2
 g_lane_width_lowerb = 1.8
 
+def re_initialize_pipeline():
+    global g_img_trans
+    global g_prv_lane_pfit
+    global g_prv_cr
+    global g_prv_dist
+    global g_prv_lane_width
+    global g_per_cent_of_view
+    global g_nwindows
+    global g_margin
+    global g_minpix
+    global g_exp_line_width
+    global g_lane_width_upperb
+    global g_lane_width_lowerb
+
+    g_img_trans = None
+    g_prv_lane_pfit = None, None
+    g_prv_cr, g_prv_dist, g_prv_lane_width = None, None, None
+    g_per_cent_of_view = 0.5
+    g_nwindows = 4
+    g_margin = 30
+    g_minpix = 20
+    g_exp_line_width = 2.0
+    g_lane_width_upperb = 2.0
+    g_lane_width_lowerb = 1.8
+
+
 def process_image(image):
     global g_prv_lane_pfit
     global g_prv_cr
@@ -692,7 +777,6 @@ def process_image(image):
     global g_prv_lane_width
 
     t_image = g_img_trans.apply(image)
-
 
     #if g_prv_lane_pfit == None:
     cur_lane_pfit = lane_polyfit_sliding_window_init(t_image,
@@ -745,7 +829,7 @@ def process_image(image):
 
     return reprojected_img
 
-def test_lane_polyfit_processor_on_image_sequence(img_trans):
+def test_lane_polyfit_processor_on_image_sequence(img_trans, images_pattern = 'test_images/test*.jpg'):
     global g_prv_lane_pfit
     global g_img_trans
    
@@ -753,7 +837,7 @@ def test_lane_polyfit_processor_on_image_sequence(img_trans):
     g_prv_cr, g_prv_dist, g_prv_lane_width = None, None, None
     g_img_trans = img_trans
 
-    for fname in glob.glob('test_images/test*.jpg'):
+    for fname in glob.glob(images_pattern):
         image = mpimage.imread(fname)
         res_image = process_image(image)
         plt.imshow(res_image)
@@ -789,20 +873,29 @@ def test_lane_polyfit_processor_on_video(img_trans, video_fname):
         output_clip.reader.close()
         output_clip.audio.reader.close_proc()
 
+import os
+
 if __name__ == '__main__':
-    cc = calibrate_camera_init()
-    bb = birds_eye_view_init(cc)
+
+    os.chdir(r"E:\Source\Udacity\CarND-Advanced-Lane-Lines")
+    print(os.getcwd())
+
+    cc = calibrate_camera_init(camera_cal_folder="camera_cal_garching/CameraCalibration-*.jpg")
+    bb = birds_eye_view_init_garching(cc, ref_image_fname="test_images_garching/straight_lines.jpg")
     
-    #test_image_transform(cc, bb)
+    #test_image_transform_garching(cc, bb)
     
     img_trans = ImageTransformation(cc, bb)
-    #image = mpimage.imread('test_images/straight_lines1.jpg')
+    #image = mpimage.imread('test_images_garching/straight_lines.jpg')
     #t_image = img_trans.apply(image)
     #draw_before_after(image, t_image, cmap='gray')
     #lane_pfit = lane_polyfit_sliding_window_init(t_image, per_cent_of_view=0.75, nwindows=5, margin=20, minpix=20)
-    #lane_pfit.draw_init(t_image)
+    #lane_pfit.draw_init(t_image)`
 
-    #test_lane_polyfit_on_image_sequence(img_trans)
-    #test_lane_polyfit_use_next_and_show_final_result_on_image_sequence(img_trans)
-    #test_lane_polyfit_processor_on_image_sequence(img_trans)
-    test_lane_polyfit_processor_on_video(img_trans, 'project_video')
+    #test_lane_polyfit_on_image_sequence(img_trans, 'test_images_garching/test*.jpg')
+    #test_lane_polyfit_and_print_info_on_image_sequence(img_trans, 'test_images_garching/test*.jpg')
+    #test_lane_polyfit_and_show_final_result_on_image_sequence(img_trans, 'test_images_garching/test*.jpg')
+    #re_initialize_pipeline()
+    #test_lane_polyfit_processor_on_image_sequence(img_trans, 'test_images_garching/test*.jpg')
+    re_initialize_pipeline()
+    test_lane_polyfit_processor_on_video(img_trans, 'Lane-Lines-Recognition-Small-1')
